@@ -98,6 +98,16 @@ test('本地 API 隐藏密钥、阻止跨域和并发任务，保存成功会话
   assert.equal((await post('/api/chat', { prompt: 'hi', agent: 'codex' }, { Origin: 'https://evil.example' })).status, 403);
   assert.equal((await post('/api/chat', { prompt: 'hi', agent: 'claude' })).status, 400);
   assert.equal((await post('/api/chat', { prompt: 'hi', agent: 'codex', sessionId: '/etc/passwd' })).status, 400);
+  const inheritedSession = process.env.CODEX_SESSION_ID;
+  try {
+    process.env.CODEX_SESSION_ID = id;
+    const conflict = await post('/api/chat', { prompt: 'hi', agent: 'codex', sessionId: id });
+    assert.equal(conflict.status, 400);
+    assert.match((await conflict.json()).error, /IDE 会话/);
+  } finally {
+    if (inheritedSession === undefined) delete process.env.CODEX_SESSION_ID;
+    else process.env.CODEX_SESSION_ID = inheritedSession;
+  }
   const first = await post('/api/chat', { prompt: 'hi', agent: 'codex' }); assert.equal(first.status, 202);
   assert.equal((await post('/api/chat', { prompt: 'again', agent: 'codex' })).status, 400);
   complete();
@@ -107,5 +117,6 @@ test('本地 API 隐藏密钥、阻止跨域和并发任务，保存成功会话
   assert.equal((await post('/api/chat', { prompt: 'fail', agent: 'codex' })).status, 202);
   await new Promise(resolve => setImmediate(resolve));
   const failed = await (await get('/api/status')).json();
+  assert.deepEqual(failed.jobs[1].failure, { exitCode: null, signal: null, completed: false, resumed: false });
   assert.equal(failed.jobs[1].status, 'failed'); assert.ok(!JSON.stringify(failed).includes('secret-diagnostic')); assert.equal(calls, 2);
 });

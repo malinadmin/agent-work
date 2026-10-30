@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { readConfig, missingConfig, isSessionId } from './config.js';
 import { resolveCodexBin } from './cli.js';
-import { runCodex } from './codex.js';
+import { runCodex, codexFailure } from './codex.js';
 import { detectAgents, Histories } from './agents.js';
 import { readModels } from './models.js';
 import { Workspaces, workspaceForDirectory } from './workspaces.js';
@@ -152,6 +152,9 @@ export async function createStudio({ config: initialConfig, run = runCodex, hist
         if (typeof data.prompt !== 'string' || !data.prompt.trim()) throw new Error('请输入消息');
         if (data.agent !== 'codex') throw new Error('当前仅 Codex 支持直接对话');
         if (data.sessionId && !isSessionId(data.sessionId)) throw new Error('会话 ID 无效');
+        if (data.sessionId && [process.env.CODEX_SESSION_ID, process.env.CODEX_THREAD_ID].includes(data.sessionId)) {
+          throw new Error('该会话属于启动服务的 Codex / IDE 会话，请勿从网页同时续接。请点击“新建会话”发起独立对话；需要接管原会话时，请先停止 IDE 中的任务，再从独立终端启动服务。');
+        }
         const requestedWorkspaceId = data.workspaceId || workspaces.current.id;
         if (requestedWorkspaceId !== workspaces.current.id) throw new Error('工作空间已变化，请刷新后重试');
         if (data.sessionId) {
@@ -171,7 +174,18 @@ export async function createStudio({ config: initialConfig, run = runCodex, hist
         // Use configured workdir, never accept an arbitrary browser supplied directory.
         Promise.resolve().then(() => run(taskConfig, { prompt: job.prompt, sessionId: job.sessionId, onSession: id => { job.sessionId = id; } }))
           .then(result => { Object.assign(job, result, { status: 'completed' }); log('codex', '任务已完成'); })
-          .catch(() => { job.status = 'failed'; job.text = 'Codex 执行失败，请检查本地认证、网络和会话，详细诊断请在终端运行 pnpm doctor。'; log('codex', job.text, 'error'); })
+          .catch(error => {
+            const failure = codexFailure(error);
+            job.status = 'failed'; job.errorCode = failure.code; job.text = `${failure.message}（错误类型：${failure.code}）`;
+            // Only expose structured process metadata, never raw stderr or model responses.
+            job.failure = {
+              exitCode: Number.isInteger(error.exitCode) ? error.exitCode : null,
+              signal: /^SIG[A-Z0-9]+$/.test(error.signal || '') ? error.signal : null,
+              completed: error.completed === true,
+              resumed: Boolean(data.sessionId),
+            };
+            log('codex', `${job.text} ${JSON.stringify(job.failure)}`, 'error');
+          })
           .finally(() => { busy = false; });
         return json(job, 202);
       }
