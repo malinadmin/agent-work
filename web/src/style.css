@@ -549,6 +549,36 @@ a {
   max-height:160px}
 .composer textarea::placeholder {
   color:var(--text-muted)}
+.composer-branch-row {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px;
+  padding:0 0 10px;
+  margin-bottom:10px;
+  border-bottom:1px solid var(--border)}
+.branch-control {
+  display:flex;
+  align-items:center;
+  gap:5px;
+  min-width:0;
+  color:var(--text-secondary)}
+.branch-control select {
+  max-width:min(240px, 50vw);
+  background:transparent;
+  color:inherit;
+  font-size:12px;
+  text-overflow:ellipsis;
+  cursor:pointer}
+.branch-control select:disabled {
+  cursor:not-allowed;
+  opacity:.65}
+.branch-control select:focus-visible {
+  outline:2px solid var(--accent-text);
+  outline-offset:3px}
+.branch-state {
+  font-size:11px;
+  color:var(--text-muted)}
 .composer-controls {
   display:flex;
   align-items:center;

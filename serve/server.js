@@ -10,6 +10,7 @@ import { resolveCodexBin } from './cli.js';
 import { runCodex, codexFailure } from './codex.js';
 import { detectAgents, Histories } from './agents.js';
 import { readModels } from './models.js';
+import { readBranches, switchBranch } from './git.js';
 import { Workspaces, workspaceForDirectory, discoverCodexDirectories } from './workspaces.js';
 import { prepareRobotStart, readRobotLock } from './robot-lock.js';
 const exec = promisify(execFile);
@@ -65,6 +66,7 @@ export async function createStudio({ config: initialConfig, run = runCodex, hist
         return json({ config: publicConfig(), authorizationCandidates: [...authorizationCandidates.values()].filter(user => !config.allowedUsers.includes(user.id)), robotStatus, robotExternal: !robot && Boolean(lock?.running), robotActionPending, configUpdating, workspaces: workspaces.snapshot(), busy, logs, jobs: [...jobs.values()] });
       }
       if (req.method === 'GET' && path === '/api/models') return json(await readModels(executionConfig()));
+      if (req.method === 'GET' && path === '/api/git/branches') return json({ ...await readBranches(workspaces.current.workdir), workspaceId: workspaces.current.id });
       if (req.method === 'GET' && path === '/api/agents') return json(await detectAgents(executionConfig()));
       if (req.method === 'GET' && path === '/api/workspaces') return json(workspaces.snapshot());
       if (req.method === 'GET' && path === '/api/workspaces/discovered') return json(await discoverCodexDirectories(await histories.list(), workspaces.data.items));
@@ -78,6 +80,15 @@ export async function createStudio({ config: initialConfig, run = runCodex, hist
         } catch { return json({ available: false, diff: '', status: '', reason: '当前工作目录不是 Git 仓库，或无法读取变更。' }); }
       }
       if (req.method === 'POST' && req.headers['content-type']?.split(';')[0] !== 'application/json') return json({ error: '需要 JSON 请求' }, 415);
+      if (req.method === 'POST' && path === '/api/git/switch') {
+        const data = await body(req);
+        return await mutateConfig(async () => {
+          if (data.workspaceId !== workspaces.current.id) throw new Error('工作空间已变化，请刷新后重试');
+          const result = await switchBranch(workspaces.current.workdir, data.branch, data.expectedBranch);
+          log('git', `已切换本地分支：${result.current}`);
+          return json({ ...result, workspaceId: workspaces.current.id });
+        });
+      }
       if (req.method === 'POST' && path === '/api/authorization/approve') {
         const data = await body(req);
         if (configUpdating || robotActionPending || busy) throw new Error('配置或任务正在处理，请稍后重试');
