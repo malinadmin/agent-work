@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { readConfig, missingConfig, isSessionId } from './config.js';
+import { resolveCodexBin } from './cli.js';
 import { runCodex } from './codex.js';
 import { detectAgents, Histories } from './agents.js';
 import { readModels } from './models.js';
@@ -25,7 +26,7 @@ export async function createStudio({ config: initialConfig, run = runCodex, hist
   let config = initialConfig || readConfig({ ...process.env, ...saved });
   const workspaces = await Workspaces.load(workspacesFile, config);
   const sessionWorkspace = async session => workspaceForDirectory(session.cwd ? await realpath(session.cwd).catch(() => resolve(session.cwd)) : '', workspaces.data.items)?.id || null;
-  const executionConfig = () => ({ ...config, workdir: workspaces.current.workdir, model: workspaces.current.model, sandbox: workspaces.current.sandbox });
+  const executionConfig = () => ({ ...config, codexBin: resolveCodexBin(initialConfig ? { ...process.env, DING_CODEX_BIN: config.codexBin } : { ...process.env, ...saved }), workdir: workspaces.current.workdir, model: workspaces.current.model, sandbox: workspaces.current.sandbox });
   let robot, robotStatus = 'stopped', busy = false, robotActionPending = false, configUpdating = false;
   async function mutateConfig(action) {
     if (robot || busy || robotActionPending || configUpdating) throw new Error('请等待任务结束并停止机器人后修改工作空间或配置');
@@ -63,7 +64,7 @@ export async function createStudio({ config: initialConfig, run = runCodex, hist
         return json({ config: publicConfig(), robotStatus, robotExternal: !robot && Boolean(lock?.running), robotActionPending, configUpdating, workspaces: workspaces.snapshot(), busy, logs, jobs: [...jobs.values()] });
       }
       if (req.method === 'GET' && path === '/api/models') return json(await readModels(executionConfig()));
-      if (req.method === 'GET' && path === '/api/agents') return json(await detectAgents(config));
+      if (req.method === 'GET' && path === '/api/agents') return json(await detectAgents(executionConfig()));
       if (req.method === 'GET' && path === '/api/workspaces') return json(workspaces.snapshot());
       if (req.method === 'GET' && path === '/api/sessions') return json(await Promise.all((await histories.list()).map(async session => ({ ...session, workspaceId: await sessionWorkspace(session) }))));
       if (req.method === 'GET' && path.startsWith('/api/sessions/')) return json(await histories.read(decodeURIComponent(path.slice(14))));
@@ -121,6 +122,7 @@ export async function createStudio({ config: initialConfig, run = runCodex, hist
           if (data.force === true) log('dingtalk', '旧机器人已停止并清理锁，正在重新启动');
           const env = { ...process.env, ...saved, STATE_FILE: workspaces.current.id === 'default' ? config.stateFile : resolve(dirname(config.stateFile), 'workspaces', workspaces.current.id, 'state.json'), DING_ROBOT_LOCK_BASE: config.stateFile, DING_CODEX_SESSION_ID: workspaces.current.id === 'default' ? config.sessionId || '' : '', DING_CODEX_WORKDIR: workspaces.current.workdir, DING_CODEX_MODEL: workspaces.current.model, DING_CODEX_SANDBOX: workspaces.current.sandbox };
           robotStatus = 'starting';
+          env.DING_CODEX_BIN = executionConfig().codexBin;
           robot = spawn(process.execPath, [resolve('serve/index.js')], { cwd: resolve('.'), env, stdio: ['ignore', 'pipe', 'pipe'] });
           for (const [stream, level] of [[robot.stdout, 'info'], [robot.stderr, 'error']]) {
             let pending = '';

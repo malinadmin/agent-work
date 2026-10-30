@@ -1,15 +1,12 @@
 import { access, readdir, stat } from 'node:fs/promises';
-import { constants } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, delimiter } from 'node:path';
+import { join } from 'node:path';
+import { findCli } from './cli.js';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 export async function executable(bin) {
-  for (const dir of bin.includes('/') ? [''] : (process.env.PATH || '').split(delimiter)) {
-    try { await access(dir ? join(dir, bin) : bin, constants.X_OK); return true; } catch {}
-  }
-  return false;
+  return Boolean(findCli(bin));
 }
 export async function detectAgents(config, home = homedir()) {
   const entries = [
@@ -21,9 +18,10 @@ export async function detectAgents(config, home = homedir()) {
     ['opencode', 'OpenCode', 'opencode', '.local/share/opencode', '开源智能体', false],
   ];
   return Promise.all(entries.map(async ([id, name, bin, folder, vendor, chat]) => {
-    const installed = await executable(bin);
+    const cliPath = findCli(bin, { home });
+    const installed = Boolean(cliPath);
     const history = await access(join(home, folder)).then(() => true, () => false);
-    return { id, name, vendor, installed, history, chat: chat && installed, historySupported: ['codex', 'claude'].includes(id) };
+    return { id, name, vendor, installed, cliPath, history, chat: chat && installed, historySupported: ['codex', 'claude'].includes(id) };
   }));
 }
 async function filesIn(root, depth = 0) {

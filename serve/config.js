@@ -1,6 +1,7 @@
 import { loadEnvFile } from 'node:process';
 import { resolve } from 'node:path';
 import { statSync } from 'node:fs';
+import { resolveCodexBin } from './cli.js';
 
 try { loadEnvFile(); } catch (error) { if (error.code !== 'ENOENT') throw error; }
 
@@ -11,7 +12,7 @@ export function readConfig(env = process.env) {
     clientSecret: env.DINGTALK_CLIENT_SECRET || '',
     allowedUsers: list(env.DINGTALK_ALLOWED_USERS),
     allowedConversations: list(env.DINGTALK_ALLOWED_CONVERSATIONS),
-    codexBin: env.DING_CODEX_BIN || 'codex',
+    codexBin: resolveCodexBin(env),
     workdir: resolve(env.DING_CODEX_WORKDIR || '.'),
     sandbox: env.DING_CODEX_SANDBOX || 'read-only',
     model: env.DING_CODEX_MODEL || '',

@@ -110,8 +110,8 @@ DING_CODEX_SANDBOX=workspace-write
 
 | 配置                             | 默认值 / 含义                              |
 | -------------------------------- | ------------------------------------------ |
-| `DING_CODEX_BIN`                 | `codex`；找不到时填写完整可执行文件路径    |
-| `DING_CODEX_WORKDIR`             | 未配置时为启动目录；模板中为当前项目       |
+| `DING_CODEX_BIN`                 | 留空或 `codex` 自动检测；也可指定可执行文件路径 |
+| `DING_CODEX_WORKDIR`             | 留空时为启动目录，也可在界面管理工作空间   |
 | `DING_CODEX_SANDBOX`             | `read-only`，可改为 `workspace-write`      |
 | `DING_CODEX_MODEL`               | 留空沿用本机 Codex 配置                    |
 | `DING_CODEX_SESSION_ID`          | 留空按聊天自动新建                         |
@@ -120,6 +120,8 @@ DING_CODEX_SANDBOX=workspace-write
 | `STATE_FILE`                     | `.data/state.json`                         |
 
 配置采用 `DING_CODEX_` 前缀，避免继承启动本项目的 Codex 进程自身的 `CODEX_SESSION_ID`、`CODEX_SANDBOX`。进程环境中的同名配置优先于 `.env`。
+
+CLI 路径优先从服务进程的 `PATH` 获取，再检查当前用户的 `.local/bin`、npm 全局目录、Bun、Volta、Cargo、OpenCode 和 nvm 安装目录，以及 `PNPM_HOME`、`NPM_CONFIG_PREFIX` 指定的位置；macOS 额外检查 Homebrew 和标准位置的 `Codex.app`。环境检测与 Codex 实际执行共用路径解析，不需要为常见安装手动填写路径。自定义 `DING_CODEX_BIN` 优先，路径无效时不会偷偷切换安装。修改安装或环境变量后请重启服务。检测不会自动安装 CLI、执行 shell 启动脚本或验证登录状态；未找到时仍可手动指定绝对路径。
 
 ## 执行与恢复
 

@@ -45,6 +45,31 @@ test('不存在的 CLI 不声称支持对话，历史存在与 CLI 检测独立'
   assert.equal(agents.find(a => a.id === 'deepseek').chat, false);
 });
 
+test('Web API refreshes CLI availability and uses the detected path for chat', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'aw-web-cli-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const bin = join(dir, 'codex');
+  const config = { stateFile: join(dir, 'state.json'), clientSecret: '', codexBin: bin, workdir: dir, sandbox: 'read-only', model: '', timeout: 1000 };
+  let executed;
+  const app = await createStudio({ config, settingsFile: join(dir, 'studio.json'), workspacesFile: join(dir, 'workspaces.json'), run: async c => { executed = c.codexBin; return { text: 'ok' }; } });
+  await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { app.server.closeAllConnections(); app.server.close(resolve); }));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const agents = async () => (await (await fetch(base + '/api/agents')).json()).find(a => a.id === 'codex');
+  assert.equal((await agents()).installed, false);
+  await writeFile(bin, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+  const detected = await agents();
+  assert.equal(detected.installed, true);
+  assert.equal(detected.chat, true);
+  assert.equal(detected.cliPath, bin);
+  const status = await (await fetch(base + '/api/status')).json();
+  assert.equal(status.config.codexBin, bin);
+  const response = await fetch(base + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent: 'codex', prompt: 'hello' }) });
+  assert.equal(response.status, 202);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(executed, detected.cliPath);
+});
+
 test('本地 API 隐藏密钥、阻止跨域和并发任务，保存成功会话与失败结果', async t => {
   const lockDir = await mkdtemp(join(tmpdir(), 'aw-api-lock-'));
   t.after(() => rm(lockDir, { recursive: true, force: true }));
