@@ -1053,6 +1053,20 @@ a {
   color:var(--text-muted);
   overflow-wrap:anywhere;
   margin:0 0 14px}
+.authorization-user {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:12px;
+  padding:14px 0;
+  border-bottom:1px solid var(--border)}
+.authorization-user code {
+  display:block;
+  margin-top:5px;
+  color:var(--text-muted);
+  overflow-wrap:anywhere;
+  font-size:12px}
 .capabilities span {
   display:flex;
   align-items:center;
@@ -1086,6 +1100,17 @@ a {
 .config-section {
   border-top:1px solid var(--border);
   margin-top:25px}
+.robot-directory-actions {
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px}
+.robot-directory-editor {
+  display:grid;
+  gap:12px;
+  padding:16px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:var(--surface-card)}
 .form-grid {
   display:grid;
   grid-template-columns:1fr 1fr;

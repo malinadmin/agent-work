@@ -48,11 +48,11 @@ export function parseRecord(event, agent) {
   }
 }
 export class Histories {
-  constructor(home = homedir()) { this.home = home; this.entries = new Map(); }
+  constructor(home = homedir(), { codexHome = process.env.CODEX_HOME || join(home, '.codex') } = {}) { this.home = home; this.codexHome = codexHome; this.entries = new Map(); }
   async list() {
     const all = [];
     for (const [agent, folder] of [['codex', '.codex/sessions'], ['claude', '.claude/projects']]) {
-      const paths = await filesIn(join(this.home, folder));
+      const paths = await filesIn(agent === 'codex' ? join(this.codexHome, 'sessions') : join(this.home, folder));
       const ranked = await Promise.all(paths.map(async file => ({ file, modified: (await stat(file)).mtimeMs })));
       for (const { file, modified } of ranked.sort((a, b) => b.modified - a.modified).slice(0, 80)) {
         let id, cwd = '', title = '';

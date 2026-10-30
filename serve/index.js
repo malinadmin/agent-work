@@ -21,7 +21,15 @@ async function main() {
     const state = new State(config.stateFile);
     const client = new DWClient({ clientId: config.clientId, clientSecret: config.clientSecret, keepAlive: true, debug: false });
     let shuttingDown = false;
-    const bridge = new Bridge({ config, state, run: runCodex, reply });
+    const bridge = new Bridge({ config, state, run: runCodex, reply, onUnauthorized: user => {
+      if (process.connected) process.send({ type: 'authorization-candidate', user });
+    } });
+    process.on('message', message => {
+      if (message?.type === 'allowed-users' && Array.isArray(message.users) && message.users.every(id => typeof id === 'string')) {
+        config.allowedUsers = message.users;
+      }
+    });
+    if (!config.allowedUsers.length) console.log('尚未绑定使用者：请先给机器人发消息或在群里 @机器人，然后在本地网页确认授权。确认前不会执行任何任务。');
     client.registerCallbackListener(TOPIC_ROBOT, response => {
       if (shuttingDown) return;
       try {

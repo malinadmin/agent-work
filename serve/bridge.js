@@ -3,16 +3,22 @@ import { isSessionId } from './config.js';
 const HELP = `发送文本即可与本机 Codex 对话。\n/status 查看会话\n/new 新建会话（下一条消息生效）\n/bind <会话UUID> 续接已有本地会话\n/last 获取上次执行结果\n/help 查看帮助\n群内请 @机器人；各用户会话分别保存。`;
 
 export class Bridge {
-  constructor({ config, state, run, reply, log = console.log }) {
-    Object.assign(this, { config, state, run, reply, log });
+  constructor({ config, state, run, reply, log = console.log, onUnauthorized = () => {} }) {
+    Object.assign(this, { config, state, run, reply, log, onUnauthorized });
     this.tail = Promise.resolve();
     this.pending = 0;
   }
   accept(message) {
     const sender = message.senderStaffId;
-    if (!sender || !this.config.allowedUsers.includes(sender) ||
-        (this.config.allowedConversations.length && !this.config.allowedConversations.includes(message.conversationId))) {
+    if (this.config.allowedConversations.length && !this.config.allowedConversations.includes(message.conversationId)) {
+      this.log('已忽略未授权会话消息；senderStaffId:', sender || '(缺失)');
+      return this.tail;
+    }
+    if (!sender || !this.config.allowedUsers.includes(sender)) {
       this.log('已忽略未授权消息；senderStaffId:', sender || '(缺失)');
+      if (typeof sender === 'string' && sender.length <= 256 && !/[\r\n\0]/.test(sender)) {
+        this.onUnauthorized({ id: sender, name: String(message.senderNick || '').replace(/[\r\n\0]/g, '').slice(0, 80) });
+      }
       return this.tail;
     }
     if (!message.conversationId || !message.msgId || !message.sessionWebhook) return this.tail;

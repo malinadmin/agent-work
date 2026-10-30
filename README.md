@@ -4,7 +4,6 @@
 
 无需公网 IP、端口映射或 HTTP 回调服务。需要本机保持运行且能连接钉钉和本机 Codex 配置的模型服务。
 
-
 ## 项目结构
 
 ```text
@@ -66,7 +65,9 @@ DINGTALK_ALLOWED_USERS=你的senderStaffId
 
 在钉钉开发者后台创建或选择企业内部应用，添加机器人能力，消息接收模式选择 **Stream 模式**，发布应用版本，设置可使用范围，然后将机器人加入聊天。此项目接入的是应用机器人，需要 Client ID 和 Client Secret。
 
-`DINGTALK_ALLOWED_USERS` 使用机器人消息里的 `senderStaffId`，多个 ID 以英文逗号分隔。如果不知道自己的 ID，可以先将此配置填为 `pending`，启动后给机器人发送消息，本机日志会输出被拒绝消息的 `senderStaffId`；将自己的 ID 填回 `.env` 并重启。未授权消息不会交给 Codex。
+`DINGTALK_ALLOWED_USERS` 可留空启动，但留空不会允许任何人执行任务。网页使用时，先保存应用凭据并启动机器人，用自己的钉钉私聊机器人或在群里 @机器人；“使用者授权”会显示收到的用户昵称与 ID，核对后点击“这是我，确认授权”，无需查找或手填 ID，也无需重启机器人。不能自动把第一个发消息的人视为自己，以免他人抢先取得执行权限。
+
+添加其他使用者时，让对方私聊机器人或在群里 @机器人，运行日志会打印 `senderStaffId`，网页也会出现待授权用户；在本地确认即可加入白名单。未授权消息不会交给 Codex，授权后需重新发送任务，不自动重放旧消息。昵称来自钉钉消息，仅作辅助识别，授权前请与本人核对。网页授权保存到 `.data/studio.json`；独立 `pnpm robot` 仍需将日志中的 ID 填到 `.env` 的白名单并重启。会话白名单仍生效，不在允许会话内的消息不会进入待授权列表。
 
 ```sh
 pnpm doctor
@@ -108,16 +109,16 @@ DING_CODEX_SANDBOX=workspace-write
 
 修改配置后重启。执行使用 `approval_policy=never`，不会等待终端确认；受沙箱约束的操作会由 Codex 处理或失败。项目不启用绕过沙箱选项。
 
-| 配置                             | 默认值 / 含义                              |
-| -------------------------------- | ------------------------------------------ |
+| 配置                             | 默认值 / 含义                                   |
+| -------------------------------- | ----------------------------------------------- |
 | `DING_CODEX_BIN`                 | 留空或 `codex` 自动检测；也可指定可执行文件路径 |
-| `DING_CODEX_WORKDIR`             | 留空时为启动目录，也可在界面管理工作空间   |
-| `DING_CODEX_SANDBOX`             | `read-only`，可改为 `workspace-write`      |
-| `DING_CODEX_MODEL`               | 留空沿用本机 Codex 配置                    |
-| `DING_CODEX_SESSION_ID`          | 留空按聊天自动新建                         |
-| `DING_CODEX_TIMEOUT_MS`          | `600000`，单次任务 10 分钟，超时终止子进程 |
-| `DINGTALK_ALLOWED_CONVERSATIONS` | 可选，进一步限定聊天 conversationId        |
-| `STATE_FILE`                     | `.data/state.json`                         |
+| `DING_CODEX_WORKDIR`             | 留空时为启动目录，也可在界面管理工作空间        |
+| `DING_CODEX_SANDBOX`             | `read-only`，可改为 `workspace-write`           |
+| `DING_CODEX_MODEL`               | 留空沿用本机 Codex 配置                         |
+| `DING_CODEX_SESSION_ID`          | 留空按聊天自动新建                              |
+| `DING_CODEX_TIMEOUT_MS`          | `600000`，单次任务 10 分钟，超时终止子进程      |
+| `DINGTALK_ALLOWED_CONVERSATIONS` | 可选，进一步限定聊天 conversationId             |
+| `STATE_FILE`                     | `.data/state.json`                              |
 
 配置采用 `DING_CODEX_` 前缀，避免继承启动本项目的 Codex 进程自身的 `CODEX_SESSION_ID`、`CODEX_SANDBOX`。进程环境中的同名配置优先于 `.env`。
 

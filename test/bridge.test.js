@@ -54,6 +54,27 @@ test('群聊中不同用户分别保存会话', async t => {
   assert.equal(Object.keys(s.state.data.sessions).length, 2);
 });
 
+test('空白名单只收集待确认身份，不执行、不自动认领首个发信人', async t => {
+  const s = setup(t, { allowedUsers: [] });
+  const candidates = [], logs = [];
+  s.bridge.onUnauthorized = user => candidates.push(user);
+  s.bridge.log = (...args) => logs.push(args.join(' '));
+  await s.bridge.accept(message('first', { senderNick: '本人' }));
+  await s.bridge.accept(message('other', { senderStaffId: 'user2' }));
+  assert.deepEqual(candidates.map(user => user.id), ['user1', 'user2']);
+  assert.equal(s.calls.length, 0);
+  assert.equal(s.replies.length, 0);
+  assert.deepEqual(s.config.allowedUsers, []);
+  assert.ok(logs.some(line => line.includes('user2')));
+  s.config.allowedConversations = ['allowed-chat'];
+  await s.bridge.accept(message('wrong-chat'));
+  assert.equal(candidates.length, 2);
+  s.config.allowedConversations = [];
+  s.config.allowedUsers = ['user1'];
+  await s.bridge.accept(message('confirmed'));
+  assert.equal(s.calls.length, 1);
+});
+
 test('会话白名单、空白名单和非文本消息', async t => {
   const s = setup(t, { allowedConversations: ['chat2'] });
   await s.bridge.accept(message());

@@ -39,6 +39,5 @@ export function missingConfig(config) {
   return [
     !config.clientId && 'DINGTALK_CLIENT_ID',
     !config.clientSecret && 'DINGTALK_CLIENT_SECRET',
-    !config.allowedUsers.length && 'DINGTALK_ALLOWED_USERS',
   ].filter(Boolean);
 }

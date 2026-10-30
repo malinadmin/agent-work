@@ -1,11 +1,24 @@
 import { readFile, writeFile, mkdir, rename, realpath, stat } from 'node:fs/promises';
-import { basename, dirname, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 export function workspaceForDirectory(directory, workspaces) {
   if (!directory) return null;
   const path = resolve(directory);
   return workspaces.filter(w => path === w.workdir || path.startsWith(w.workdir.endsWith(sep) ? w.workdir : w.workdir + sep)).sort((a, b) => b.workdir.length - a.workdir.length)[0] || null;
+}
+
+export async function discoverCodexDirectories(sessions, workspaces) {
+  const found = new Map();
+  for (const session of sessions) {
+    if (session.agent !== 'codex' || typeof session.cwd !== 'string' || !isAbsolute(session.cwd) || /[\r\n\0]/.test(session.cwd)) continue;
+    try {
+      const workdir = await realpath(session.cwd);
+      if (found.has(workdir) || workspaces.some(w => w.workdir === workdir) || !(await stat(workdir)).isDirectory()) continue;
+      found.set(workdir, { name: basename(workdir) || '工作空间', workdir });
+    } catch { /* Historical directories may have been removed or become inaccessible. */ }
+  }
+  return [...found.values()];
 }
 export class Workspaces {
   constructor(file, data) { this.file = file; this.data = data; }

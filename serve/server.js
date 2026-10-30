@@ -10,7 +10,7 @@ import { resolveCodexBin } from './cli.js';
 import { runCodex, codexFailure } from './codex.js';
 import { detectAgents, Histories } from './agents.js';
 import { readModels } from './models.js';
-import { Workspaces, workspaceForDirectory } from './workspaces.js';
+import { Workspaces, workspaceForDirectory, discoverCodexDirectories } from './workspaces.js';
 import { prepareRobotStart, readRobotLock } from './robot-lock.js';
 const exec = promisify(execFile);
 const settingsPath = resolve('.data/studio.json');
@@ -28,6 +28,7 @@ export async function createStudio({ config: initialConfig, run = runCodex, hist
   const sessionWorkspace = async session => workspaceForDirectory(session.cwd ? await realpath(session.cwd).catch(() => resolve(session.cwd)) : '', workspaces.data.items)?.id || null;
   const executionConfig = () => ({ ...config, codexBin: resolveCodexBin(initialConfig ? { ...process.env, DING_CODEX_BIN: config.codexBin } : { ...process.env, ...saved }), workdir: workspaces.current.workdir, model: workspaces.current.model, sandbox: workspaces.current.sandbox });
   let robot, robotStatus = 'stopped', busy = false, robotActionPending = false, configUpdating = false;
+  const authorizationCandidates = new Map();
   async function mutateConfig(action) {
     if (robot || busy || robotActionPending || configUpdating) throw new Error('请等待任务结束并停止机器人后修改工作空间或配置');
     configUpdating = true;
@@ -61,11 +62,12 @@ export async function createStudio({ config: initialConfig, run = runCodex, hist
       const url = new URL(req.url, `http://${host}`), path = url.pathname;
       if (req.method === 'GET' && path === '/api/status') {
         const lock = config.stateFile ? await readRobotLock(config.stateFile) : null;
-        return json({ config: publicConfig(), robotStatus, robotExternal: !robot && Boolean(lock?.running), robotActionPending, configUpdating, workspaces: workspaces.snapshot(), busy, logs, jobs: [...jobs.values()] });
+        return json({ config: publicConfig(), authorizationCandidates: [...authorizationCandidates.values()].filter(user => !config.allowedUsers.includes(user.id)), robotStatus, robotExternal: !robot && Boolean(lock?.running), robotActionPending, configUpdating, workspaces: workspaces.snapshot(), busy, logs, jobs: [...jobs.values()] });
       }
       if (req.method === 'GET' && path === '/api/models') return json(await readModels(executionConfig()));
       if (req.method === 'GET' && path === '/api/agents') return json(await detectAgents(executionConfig()));
       if (req.method === 'GET' && path === '/api/workspaces') return json(workspaces.snapshot());
+      if (req.method === 'GET' && path === '/api/workspaces/discovered') return json(await discoverCodexDirectories(await histories.list(), workspaces.data.items));
       if (req.method === 'GET' && path === '/api/sessions') return json(await Promise.all((await histories.list()).map(async session => ({ ...session, workspaceId: await sessionWorkspace(session) }))));
       if (req.method === 'GET' && path.startsWith('/api/sessions/')) return json(await histories.read(decodeURIComponent(path.slice(14))));
       if (req.method === 'GET' && path === '/api/diff') {
@@ -76,6 +78,29 @@ export async function createStudio({ config: initialConfig, run = runCodex, hist
         } catch { return json({ available: false, diff: '', status: '', reason: '当前工作目录不是 Git 仓库，或无法读取变更。' }); }
       }
       if (req.method === 'POST' && req.headers['content-type']?.split(';')[0] !== 'application/json') return json({ error: '需要 JSON 请求' }, 415);
+      if (req.method === 'POST' && path === '/api/authorization/approve') {
+        const data = await body(req);
+        if (configUpdating || robotActionPending || busy) throw new Error('配置或任务正在处理，请稍后重试');
+        if (!robot?.connected || robotStatus !== 'running') throw new Error('请先在本工作台启动机器人并接收待授权用户的消息');
+        if (typeof data.id !== 'string' || !authorizationCandidates.has(data.id)) throw new Error('未找到该待授权用户，请先向机器人发送消息');
+        configUpdating = true;
+        try {
+          const users = [...new Set([...config.allowedUsers, data.id])];
+          const next = { ...saved, DINGTALK_ALLOWED_USERS: users.join(',') };
+          await mkdir(dirname(settingsFile), { recursive: true, mode: 0o700 });
+          await writeFile(`${settingsFile}.tmp`, JSON.stringify(next, null, 2), { mode: 0o600 });
+          await rename(`${settingsFile}.tmp`, settingsFile);
+          saved = next; config.allowedUsers = users;
+          const child = robot;
+          await new Promise((resolve, reject) => {
+            if (!child?.connected) return reject(new Error('授权已保存，但机器人已断开，请重新启动机器人后生效'));
+            child.send({ type: 'allowed-users', users }, error => error ? reject(new Error('授权已保存，请重新启动机器人后生效')) : resolve());
+          });
+          authorizationCandidates.delete(data.id);
+          log('dingtalk', `已通过本地界面授权用户；senderStaffId: ${data.id}。请重新发送任务。`);
+          return json(publicConfig());
+        } finally { configUpdating = false; }
+      }
       if (req.method === 'POST' && path.startsWith('/api/workspaces/')) {
         const data = await body(req);
         const action = path.slice('/api/workspaces/'.length);
@@ -123,7 +148,15 @@ export async function createStudio({ config: initialConfig, run = runCodex, hist
           const env = { ...process.env, ...saved, STATE_FILE: workspaces.current.id === 'default' ? config.stateFile : resolve(dirname(config.stateFile), 'workspaces', workspaces.current.id, 'state.json'), DING_ROBOT_LOCK_BASE: config.stateFile, DING_CODEX_SESSION_ID: workspaces.current.id === 'default' ? config.sessionId || '' : '', DING_CODEX_WORKDIR: workspaces.current.workdir, DING_CODEX_MODEL: workspaces.current.model, DING_CODEX_SANDBOX: workspaces.current.sandbox };
           robotStatus = 'starting';
           env.DING_CODEX_BIN = executionConfig().codexBin;
-          robot = spawn(process.execPath, [resolve('serve/index.js')], { cwd: resolve('.'), env, stdio: ['ignore', 'pipe', 'pipe'] });
+          authorizationCandidates.clear();
+          robot = spawn(process.execPath, [resolve('serve/index.js')], { cwd: resolve('.'), env, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+          const sourceRobot = robot;
+          robot.on('message', message => {
+            const user = message?.user;
+            if (robot !== sourceRobot || message?.type !== 'authorization-candidate' || typeof user?.id !== 'string' || !user.id || user.id.length > 256 || /[\r\n\0]/.test(user.id)) return;
+            authorizationCandidates.set(user.id, { id: user.id, name: String(user.name || '').slice(0, 80) });
+            if (authorizationCandidates.size > 100) authorizationCandidates.delete(authorizationCandidates.keys().next().value);
+          });
           for (const [stream, level] of [[robot.stdout, 'info'], [robot.stderr, 'error']]) {
             let pending = '';
             stream.on('data', chunk => {

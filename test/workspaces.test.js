@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Workspaces, workspaceForDirectory } from '../serve/workspaces.js';
+import { Workspaces, workspaceForDirectory, discoverCodexDirectories } from '../serve/workspaces.js';
 import { createStudio } from '../serve/server.js';
 
 async function fixture(t) {
@@ -26,6 +26,21 @@ test('旧配置迁移默认空间，模型权限分别保存，切换和重启�
   await assert.rejects(reloaded.remove(id), /至少保留/);
   assert.equal(JSON.parse(await readFile(file, 'utf8')).items.length, 1);
 });
+test('自动识别仅返回存在且未登记的 Codex 目录，去重且不自动切换', async t => {
+  const { store, a, b, dir } = await fixture(t);
+  const entries = [
+    { agent: 'codex', cwd: a },
+    { agent: 'codex', cwd: b },
+    { agent: 'codex', cwd: b + '/.' },
+    { agent: 'codex', cwd: join(dir, 'missing') },
+    { agent: 'claude', cwd: dir },
+    { agent: 'codex', cwd: 'relative' },
+  ];
+  const found = await discoverCodexDirectories(entries, store.data.items);
+  assert.deepEqual(found, [{ name: 'b', workdir: b }]);
+  assert.equal(store.current.id, 'default');
+  assert.equal(store.data.items.length, 1);
+});
 test('验证目录和重复项目，移除登记保留本地文件，嵌套项目匹配最具体空间', async t => {
   const { store, a, b } = await fixture(t);
   await assert.rejects(store.add({ workdir: a }), /已添加/);
@@ -41,7 +56,7 @@ test('验证目录和重复项目，移除登记保留本地文件，嵌套项�
 test('API 按工作空间执行并拒绝跨项目续接；忙碌时禁止切换且不影响已提交任务', async t => {
   const { dir, a, b, config, file } = await fixture(t);
   const uuid = '01900000-0000-7000-8000-000000000001';
-  const histories = { entries: new Map([[`codex:${uuid}`, { cwd: a }]]), async list() { return [{ key: `codex:${uuid}`, id: uuid, cwd: a }]; } };
+  const histories = { entries: new Map([[`codex:${uuid}`, { cwd: a }]]), async list() { return [{ agent: 'codex', key: `codex:${uuid}`, id: uuid, cwd: a }, { agent: 'codex', cwd: b }]; } };
   let received, finish;
   const app = await createStudio({ config, histories, workspacesFile: file, settingsFile: join(dir, 'studio.json'), run: async (config, request) => {
     received = config; request.onSession(uuid); return new Promise(resolve => { finish = () => resolve({ sessionId: uuid, text: 'ok' }); });
@@ -50,7 +65,9 @@ test('API 按工作空间执行并拒绝跨项目续接；忙碌时禁止切换�
   const base = `http://127.0.0.1:${app.server.address().port}`;
   t.after(() => new Promise(resolve => { app.server.closeAllConnections(); app.server.close(resolve); }));
   const post = (path, data) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  assert.deepEqual(await (await fetch(base + '/api/workspaces/discovered')).json(), [{ name: 'b', workdir: b }]);
   const added = await (await post('/api/workspaces/add', { name: 'B', workdir: b, model: 'model-b', sandbox: 'workspace-write' })).json();
+  assert.deepEqual(await (await fetch(base + '/api/workspaces/discovered')).json(), []);
   assert.equal(added.config.workdir, b); const id = added.activeId;
   const sessions = await (await fetch(base + '/api/sessions')).json(); assert.equal(sessions[0].workspaceId, 'default');
   assert.equal((await post('/api/chat', { agent: 'codex', prompt: 'bad', sessionId: uuid, workspaceId: id })).status, 400);
