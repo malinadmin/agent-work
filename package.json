@@ -1,0 +1,31 @@
+{
+  "name": "aw",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "AW(智能体工作台) — 本地智能体对话与钉钉 Stream 机器人",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,web \"node --watch serve/server.js\" \"vite\"",
+    "build": "vite build",
+    "start": "node serve/server.js",
+    "robot": "node serve/index.js",
+    "doctor": "node serve/doctor.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "dingtalk-stream": "2.1.6-beta.1",
+    "vue": "^3.5.44",
+    "@lucide/vue": "latest"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "concurrently": "^10.0.6",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.3.5"
+  },
+  "packageManager": "pnpm@9.5.0"
+}
