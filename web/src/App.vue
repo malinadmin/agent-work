@@ -157,8 +157,10 @@ async function applyWorkspaceResult(result, previousId) {
   setForm(); await Promise.all([refreshSessions(), refreshDiff()]);
 }
 async function switchWorkspace(id) {
-  if (workspaceDisabled.value) return;
+  // Returning to the current conversation is always safe, even while a task runs.
+  // The disabled guard only applies when switching to a different workspace.
   if (id === workspaceData.value.activeId) { expandedWorkspaces.value.add(id); page.value = 'chat'; return; }
+  if (workspaceDisabled.value) return;
   const previousId = workspaceData.value.activeId; rememberWorkspace(); workspaceBusy.value = true; error.value = '';
   try { const result = await api('/workspaces/select', { id }); await applyWorkspaceResult(result, previousId); page.value = 'chat'; if (window.innerWidth <= 760) panel.value = false; }
   catch (e) { error.value = e.message; }
@@ -279,6 +281,7 @@ onUnmounted(() => { clearInterval(timer); window.removeEventListener('keydown', 
     <aside class="sidebar">
       <a class="brand" href="/" aria-label="AW(智能体工作台) 首页"><span class="brand-icon"><Terminal :size="20" /></span><span>AW<small>智能体工作台</small></span></a>
       <nav class="main-nav workspace-global-nav">
+        <button :class="{ selected: page === 'chat' }" @click="page = 'chat'"><MessageSquare :size="17" /> 对话工作台</button>
         <button :class="{ selected: page === 'workspaces' }" @click="page = 'workspaces'"><FolderOpen :size="17" /> 工作空间管理 <span class="count">{{ workspaceData.items.length }}</span></button>
         <button :class="{ selected: page === 'agents' }" @click="page = 'agents'"><Layers :size="17" /> 智能体环境 <span class="count">{{ agents.filter(a => a.installed).length }}</span></button>
         <button :class="{ selected: page === 'robot' }" @click="page = 'robot'"><Bot :size="17" /> 钉钉机器人 <span class="dot" :class="{ live: status.robotStatus === 'running' }"></span></button>
